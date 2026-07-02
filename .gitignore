@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+job-scraper-env/
+
+# Outputs and build artifacts
+output/
+*.log
+temp.tex
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Installers and large binaries
+*.pkg
+
+# Local overrides
+config.local.yaml
+
+temp.text

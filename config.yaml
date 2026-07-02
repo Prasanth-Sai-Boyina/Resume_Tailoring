@@ -1,0 +1,47 @@
+paths:
+  data_dir: data
+  output_dir: output
+  inputs:
+    job_description: jd.txt
+    profile: profile.txt
+    resume: resume.tex
+    latex_template: format.tex
+  outputs:
+    analysis: analysis.json
+    resume_analysis: resume_analysis.json
+    final_prompt: final_prompt.txt
+    generated_resume: output_resume.tex
+    resume_markdown: resume.md
+
+llm:
+  ollama_url: http://localhost:11434/api/generate
+  ats_model: deepseek-coder:6.7b
+  resume_model: qwen3:32b
+  max_retries: 3
+  retry_backoff: 1.5
+  request_timeout: 900
+  resume_generation:
+    temperature: 0.1
+    top_p: 0.9
+    num_predict: 4000
+    repeat_penalty: 1.05
+    stream: true
+    think: false
+    progress_chars: 200
+
+scoring:
+  weights:
+    skills: 0.40
+    experience: 0.30
+    tools: 0.20
+    impact: 0.10
+  match_levels:
+    high: 100.0
+    medium: 60.0
+    low: 20.0
+    unknown: 40.0
+
+latex:
+  engine: pdflatex
+  passes: 2
+  use_bibtex: false
