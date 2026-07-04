@@ -1,5 +1,7 @@
 """Production ATS matching engine."""
 
+from __future__ import annotations
+
 import logging
 
 from pydantic import ValidationError
@@ -9,7 +11,8 @@ from resume_pipeline.ats.models import ATSResult, LLMEvidence
 from resume_pipeline.ats.prompts import build_ats_prompt
 from resume_pipeline.ats.scoring import compute_score
 from resume_pipeline.config import Settings, load_settings
-from resume_pipeline.llm.client import LLMError, call_llm_json
+from resume_pipeline.llm.interfaces import LLMConfig, LLMError, LLMProvider
+from resume_pipeline.llm.factory import LLMProviderFactory
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +21,7 @@ def ats_match(
     jd: str,
     profile: str,
     settings: Settings | None = None,
+    llm_provider: LLMProvider | None = None,
 ) -> ATSResult:
     """
     Evaluate how well a candidate profile matches a job description.
@@ -32,11 +36,20 @@ def ats_match(
     if not profile or not profile.strip():
         raise ValueError("Candidate profile must not be empty.")
 
+    provider = llm_provider or LLMProviderFactory.from_config(settings.llm)
     prompt = build_ats_prompt(jd, profile)
+
+    llm_config = LLMConfig(
+        model=settings.llm.ats_model,
+        temperature=0.1,
+        max_tokens=settings.llm.resume_generation.num_predict,
+        stream=False,
+    )
+
     logger.info("Calling LLM for ATS evaluation.")
 
     try:
-        raw = call_llm_json(prompt, settings.llm.ats_model, settings)
+        raw = provider.generate_json(prompt, llm_config)
         logger.debug("Raw LLM output: %s", raw)
 
         evidence = LLMEvidence.model_validate(raw)

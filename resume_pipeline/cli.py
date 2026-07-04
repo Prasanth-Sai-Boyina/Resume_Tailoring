@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import sys
 from pathlib import Path
+from collections.abc import Callable
 
-from resume_pipeline.ats.engine import ats_match
 from resume_pipeline.config import Settings, load_settings
 from resume_pipeline.convert.latex_markdown import latex_to_markdown
 from resume_pipeline.convert.latex_pdf import compile_latex_cli
 from resume_pipeline.io import ensure_output_dir, read_text, write_json, write_text
-from resume_pipeline.llm.client import print_stream_header
-from resume_pipeline.resume.generator import generate_resume_from_prompt
 from resume_pipeline.resume.prompts import build_resume_prompt
+from resume_pipeline.services import ATSService, ATSServiceConfig, ResumeGenerationService, ResumeServiceConfig
+from resume_pipeline.llm.factory import LLMProviderFactory, create_llm_config_from_settings
+from resume_pipeline.llm.interfaces import LLMConfig, LLMProvider
 
 
 def configure_logging(verbose: bool = False) -> None:
@@ -26,15 +26,46 @@ def configure_logging(verbose: bool = False) -> None:
     )
 
 
-def run_analysis(settings: Settings) -> None:
+def _create_ats_service(settings: Settings) -> ATSService:
+    llm_provider = LLMProviderFactory.from_config(settings.llm)
+    return ATSService(
+        llm_provider=llm_provider,
+        config=ATSServiceConfig(
+            model=settings.llm.ats_model,
+            max_tokens=settings.llm.resume_generation.num_predict,
+        ),
+    )
+
+
+def _create_resume_service(settings: Settings) -> ResumeGenerationService:
+    llm_provider = LLMProviderFactory.from_config(settings.llm)
+    return ResumeGenerationService(
+        llm_provider=llm_provider,
+        config=ResumeServiceConfig(
+            model=settings.llm.resume_model,
+            temperature=settings.llm.resume_generation.temperature,
+            top_p=settings.llm.resume_generation.top_p,
+            max_tokens=settings.llm.resume_generation.num_predict,
+            stream=settings.llm.resume_generation.stream,
+            progress_chars=settings.llm.resume_generation.progress_chars,
+            repeat_penalty=settings.llm.resume_generation.repeat_penalty,
+        ),
+    )
+
+
+def run_analysis(settings: Settings, ats_service: ATSService | None = None,
+                 resume_service: ResumeGenerationService | None = None) -> None:
     ensure_output_dir(settings)
+
+    ats_service = ats_service or _create_ats_service(settings)
+    resume_service = resume_service or _create_resume_service(settings)
 
     jd = read_text(settings.paths.input_path("job_description"))
     profile = read_text(settings.paths.input_path("profile"))
     latex_format = read_text(settings.paths.input_path("latex_template"))
 
     print("Running ATS analysis...")
-    analysis = ats_match(jd, profile, settings)
+    analysis = ats_service.analyze(jd, profile)
     print("ATS Analysis completed.")
 
     analysis_path = settings.paths.output_path("analysis")
@@ -47,21 +78,28 @@ def run_analysis(settings: Settings) -> None:
     write_text(prompt_path, prompt)
     print(f"Prompt saved to {prompt_path}")
 
-    print_stream_header(
-        settings.llm.resume_model,
-        len(prompt),
-        settings.llm.resume_generation.num_predict,
+    model = settings.llm.resume_model
+    max_tokens = settings.llm.resume_generation.num_predict
+    print(
+        f"Generating LaTeX with {model} "
+        f"(prompt ~{len(prompt):,} chars, up to {max_tokens:,} tokens).",
+        flush=True,
     )
-    output_path = generate_resume_from_prompt(
-        prompt_path,
-        settings.paths.output_path("generated_resume"),
-        settings,
+    print(
+        "Large local models can take 5-20 minutes. Progress updates below:",
+        flush=True,
     )
+
+    latex_output = resume_service.generate(jd, profile, analysis, latex_format)
+    output_path = settings.paths.output_path("generated_resume")
+    write_text(output_path, latex_output)
     print(f"LaTeX generation completed. Check {output_path}")
 
 
-def run_score(settings: Settings) -> None:
+def run_score(settings: Settings, ats_service: ATSService | None = None) -> None:
     ensure_output_dir(settings)
+
+    ats_service = ats_service or _create_ats_service(settings)
 
     jd = read_text(settings.paths.input_path("job_description"))
     resume_md_path = settings.paths.output_path("resume_markdown")
@@ -73,7 +111,7 @@ def run_score(settings: Settings) -> None:
     )
 
     print("Running Resume ATS Score...")
-    resume_analysis = ats_match(jd, resume, settings)
+    resume_analysis = ats_service.analyze(jd, resume)
 
     output_path = settings.paths.output_path("resume_analysis")
     write_json(output_path, resume_analysis.model_dump())

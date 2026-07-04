@@ -57,7 +57,11 @@ class ResumeGenerationConfig:
 
 @dataclass
 class LLMConfig:
+    provider: str = "ollama"
     ollama_url: str = "http://localhost:11434/api/generate"
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_model: str = "gpt-4o-mini"
     ats_model: str = "deepseek-coder:6.7b"
     resume_model: str = "qwen2.5-coder:14b"
     max_retries: int = 3
@@ -142,7 +146,11 @@ def _build_settings(raw: dict[str, Any]) -> Settings:
             outputs=OutputPaths(**outputs_raw),
         ),
         llm=LLMConfig(
+            provider=llm_raw.get("provider", LLMConfig.provider),
             ollama_url=llm_raw.get("ollama_url", LLMConfig.ollama_url),
+            openai_api_key=llm_raw.get("openai_api_key", LLMConfig.openai_api_key),
+            openai_base_url=llm_raw.get("openai_base_url", LLMConfig.openai_base_url),
+            openai_model=llm_raw.get("openai_model", LLMConfig.openai_model),
             ats_model=llm_raw.get("ats_model", LLMConfig.ats_model),
             resume_model=llm_raw.get("resume_model", LLMConfig.resume_model),
             max_retries=llm_raw.get("max_retries", LLMConfig.max_retries),
